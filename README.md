@@ -92,6 +92,10 @@ claude mcp add z3rno -- z3rno-mcp
 
 Then set environment variables in your shell profile or `.env`.
 
+For a detailed step-by-step setup, see [QUICKSTART.md](QUICKSTART.md).
+
+Full documentation: [docs.z3rno.dev](https://docs.z3rno.dev)
+
 ## Local Development
 
 ```bash
