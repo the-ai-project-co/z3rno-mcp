@@ -33,7 +33,7 @@ z3rno-mcp = "z3rno_mcp.server:main"
 
 [project.urls]
 Homepage = "https://z3rno.dev"
-Documentation = "https://docs.z3rno.dev/mcp"
+Documentation = "https://astron-bb4261fd.mintlify.app/components/mcp"
 Repository = "https://github.com/the-ai-project-co/z3rno-mcp"
 
 [tool.hatch.build.targets.wheel]
