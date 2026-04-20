@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "z3rno-mcp"
+version = "0.1.0"
+description = "MCP server exposing Z3rno memory operations as tools for Claude Desktop, Cursor, and other MCP clients."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [
+  { name = "The AI Project Co.", email = "engineering@z3rno.dev" },
+]
+keywords = ["mcp", "ai-agents", "memory", "z3rno", "claude"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+  "mcp>=1.0.0",
+  "z3rno>=0.1.0",
+]
+
+[project.scripts]
+z3rno-mcp = "z3rno_mcp.server:main"
+
+[project.urls]
+Homepage = "https://z3rno.dev"
+Documentation = "https://docs.z3rno.dev/mcp"
+Repository = "https://github.com/the-ai-project-co/z3rno-mcp"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/z3rno_mcp"]
+
+[dependency-groups]
+dev = [
+  "ruff>=0.8.6",
+  "mypy>=1.13.0",
+  "pytest>=8.3.0",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP", "N", "S", "A", "T20", "SIM", "RUF"]
+ignore = ["E501", "S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["z3rno_mcp"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
