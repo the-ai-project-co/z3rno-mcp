@@ -1,5 +1,9 @@
 # z3rno-mcp
 
+[![PyPI](https://img.shields.io/pypi/v/z3rno-mcp)](https://pypi.org/project/z3rno-mcp/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![CI](https://github.com/the-ai-project-co/z3rno-mcp/actions/workflows/release.yml/badge.svg)](https://github.com/the-ai-project-co/z3rno-mcp/actions/workflows/release.yml)
+
 MCP (Model Context Protocol) server that exposes [Z3rno](https://z3rno.dev) memory operations as tools. Gives any MCP-compatible AI client (Claude Desktop, Cursor, Windsurf, etc.) the ability to store, recall, forget, and audit agent memories.
 
 ## Tools
@@ -94,7 +98,7 @@ Then set environment variables in your shell profile or `.env`.
 
 For a detailed step-by-step setup, see [QUICKSTART.md](QUICKSTART.md).
 
-Full documentation: [docs.z3rno.dev](https://docs.z3rno.dev)
+Full documentation: [astron-bb4261fd.mintlify.app](https://astron-bb4261fd.mintlify.app)
 
 ## Local Development
 
