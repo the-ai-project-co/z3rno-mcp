@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "z3rno-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server exposing Z3rno memory operations as tools for Claude Desktop, Cursor, and other MCP clients."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -25,7 +25,7 @@ classifiers = [
 
 dependencies = [
   "mcp>=1.0.0",
-  "z3rno>=0.1.0",
+  "z3rno>=0.2.0",
 ]
 
 [project.scripts]
