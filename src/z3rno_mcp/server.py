@@ -12,11 +12,9 @@ plus a viewer-URL helper:
   - z3rno.refine         — improve the graph in place (Phase D)
   - z3rno.visualize_url  — return a graph-viewer URL for a dataset (Phase E.5 backend)
 
-The four classic verbs use the official z3rno Python SDK. The three
-Forge verbs (ingest / distill / refine) call the server's HTTP
-endpoints directly via httpx — the SDK wrappers are queued for the
-next SDK release. visualize_url is a deterministic URL builder; it
-does not call the server.
+All seven verbs use the official z3rno Python SDK (v0.4.0+).
+visualize_url is a deterministic URL builder; it does not call the
+server.
 
 Configuration via environment variables:
   - Z3RNO_BASE_URL  (default: https://api.z3rno.dev)
@@ -32,7 +30,6 @@ import os
 from typing import Any
 from urllib.parse import urlencode
 
-import httpx
 from mcp.server.fastmcp import FastMCP
 from z3rno import Z3rnoClient
 
@@ -70,47 +67,6 @@ def _default_agent_id(agent_id: str | None) -> str:
     raise ValueError(msg)
 
 
-def _http_request(method: str, path: str, *, body: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Call a z3rno-server HTTP endpoint directly.
-
-    Used by the Forge tools (ingest / distill / refine) until those
-    verbs ship as first-class SDK methods. Reuses Z3RNO_BASE_URL +
-    Z3RNO_API_KEY from the environment so a single config drives both
-    the SDK-backed and HTTP-backed tools.
-
-    Returns the parsed JSON body. Surfaces HTTP errors as a structured
-    dict so the MCP client can render them — we never raise into the
-    tool layer.
-    """
-    base_url = os.environ.get("Z3RNO_BASE_URL", "https://api.z3rno.dev").rstrip("/")
-    api_key = os.environ.get("Z3RNO_API_KEY", "")
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    url = f"{base_url}{path}"
-    try:
-        with httpx.Client(timeout=30.0) as client:
-            response = client.request(method, url, headers=headers, json=body)
-    except httpx.HTTPError as exc:
-        return {"error": "transport_failed", "detail": str(exc), "url": url}
-    if response.status_code >= 400:
-        return {
-            "error": "http_error",
-            "status_code": response.status_code,
-            "detail": _safe_json(response),
-            "url": url,
-        }
-    return _safe_json(response)
-
-
-def _safe_json(response: httpx.Response) -> dict[str, Any]:
-    try:
-        parsed = response.json()
-    except ValueError:
-        return {"raw_body": response.text}
-    if isinstance(parsed, dict):
-        return parsed
-    return {"value": parsed}
 
 
 # ---------------------------------------------------------------------------
@@ -278,19 +234,23 @@ def ingest(
     if kind not in {"text", "url"}:
         return json.dumps({"error": "kind must be 'text' or 'url'"})
     resolved_agent_id = _default_agent_id(agent_id)
-    body: dict[str, Any] = {"kind": kind, "agent_id": resolved_agent_id}
-    if kind == "text":
-        if not text:
-            return json.dumps({"error": "kind='text' requires the 'text' parameter"})
-        body["text"] = text
-    else:
-        if not url:
-            return json.dumps({"error": "kind='url' requires the 'url' parameter"})
-        body["url"] = url
-    if dataset_id:
-        body["dataset_id"] = dataset_id
-    result = _http_request("POST", "/v1/ingest", body=body)
-    return json.dumps(result, default=str, indent=2)
+    client = _get_client()
+    try:
+        if kind == "text":
+            if not text:
+                return json.dumps({"error": "kind='text' requires the 'text' parameter"})
+            job = client.ingest_text(
+                agent_id=resolved_agent_id, text=text, dataset_id=dataset_id
+            )
+        else:
+            if not url:
+                return json.dumps({"error": "kind='url' requires the 'url' parameter"})
+            job = client.ingest_url(
+                agent_id=resolved_agent_id, url=url, dataset_id=dataset_id
+            )
+        return json.dumps(job.model_dump(), default=str, indent=2)
+    finally:
+        client.close()
 
 
 @mcp.tool(
@@ -309,17 +269,20 @@ def distill(
     poll_job_id: str | None = None,
 ) -> str:
     """Enqueue a Forge distillation job, or poll an existing one."""
-    if poll_job_id:
-        result = _http_request("GET", f"/v1/distill/{poll_job_id}")
-        return json.dumps(result, default=str, indent=2)
-    if not memory_ids:
-        return json.dumps(
-            {"error": "provide memory_ids to distill, or poll_job_id to check status"}
-        )
-    resolved_agent_id = _default_agent_id(agent_id)
-    body: dict[str, Any] = {"agent_id": resolved_agent_id, "memory_ids": memory_ids}
-    result = _http_request("POST", "/v1/distill", body=body)
-    return json.dumps(result, default=str, indent=2)
+    client = _get_client()
+    try:
+        if poll_job_id:
+            status = client.get_distill_status(poll_job_id)
+            return json.dumps(status.model_dump(), default=str, indent=2)
+        if not memory_ids:
+            return json.dumps(
+                {"error": "provide memory_ids to distill, or poll_job_id to check status"}
+            )
+        resolved_agent_id = _default_agent_id(agent_id)
+        job = client.distill(agent_id=resolved_agent_id, memory_ids=memory_ids)
+        return json.dumps(job.model_dump(), default=str, indent=2)
+    finally:
+        client.close()
 
 
 @mcp.tool(
@@ -338,14 +301,15 @@ def refine(
     poll_job_id: str | None = None,
 ) -> str:
     """Enqueue a refine run, or poll an existing one."""
-    if poll_job_id:
-        result = _http_request("GET", f"/v1/refine/{poll_job_id}")
-        return json.dumps(result, default=str, indent=2)
-    body: dict[str, Any] = {}
-    if dataset_id:
-        body["dataset_id"] = dataset_id
-    result = _http_request("POST", "/v1/refine", body=body)
-    return json.dumps(result, default=str, indent=2)
+    client = _get_client()
+    try:
+        if poll_job_id:
+            status = client.get_refine_status(poll_job_id)
+            return json.dumps(status.model_dump(), default=str, indent=2)
+        job = client.refine(dataset_id=dataset_id)
+        return json.dumps(job.model_dump(), default=str, indent=2)
+    finally:
+        client.close()
 
 
 @mcp.tool(

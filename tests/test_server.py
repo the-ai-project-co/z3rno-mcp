@@ -268,38 +268,62 @@ class TestAgentIdResolution:
             store(content="test")
 
 
+
+
 # ---------------------------------------------------------------------------
-# Forge tools (Phase E slice 3) — mock _http_request, no live server
+# Forge tools — Phase E slice 3, refactored to use SDK methods (v0.4.0+)
 # ---------------------------------------------------------------------------
+
+
+def _mock_job(**overrides):
+    """Stand-in for an IngestJob/DistillJob/RefineJob SDK model."""
+    defaults = {
+        "job_id": "j-1",
+        "status": "queued",
+        "kind": "text",
+        "memory_ids": [],
+        "enqueued_at": "2026-05-11T00:00:00Z",
+    }
+    defaults.update(overrides)
+    m = MagicMock()
+    m.model_dump.return_value = defaults
+    return m
 
 
 class TestIngestHandler:
-    @patch("z3rno_mcp.server._http_request")
-    def test_ingest_text_calls_post(self, mock_http):
-        mock_http.return_value = {"job_id": "ij-1", "status": "queued"}
+    @patch("z3rno_mcp.server._get_client")
+    def test_ingest_text_calls_sdk(self, mock_get_client):
+        client = MagicMock()
+        client.ingest_text.return_value = _mock_job(job_id="ij-1", kind="text")
+        mock_get_client.return_value = client
+
         result = ingest(kind="text", agent_id="a1", text="hello world")
         parsed = json.loads(result)
         assert parsed["job_id"] == "ij-1"
-        method, path = mock_http.call_args.args[:2]
-        assert method == "POST"
-        assert path == "/v1/ingest"
-        assert mock_http.call_args.kwargs["body"] == {
-            "kind": "text",
-            "agent_id": "a1",
-            "text": "hello world",
-        }
+        client.ingest_text.assert_called_once_with(
+            agent_id="a1", text="hello world", dataset_id=None
+        )
+        client.close.assert_called_once()
 
-    @patch("z3rno_mcp.server._http_request")
-    def test_ingest_url_includes_url(self, mock_http):
-        mock_http.return_value = {"job_id": "ij-2"}
+    @patch("z3rno_mcp.server._get_client")
+    def test_ingest_url_calls_sdk(self, mock_get_client):
+        client = MagicMock()
+        client.ingest_url.return_value = _mock_job(job_id="ij-2", kind="url")
+        mock_get_client.return_value = client
+
         ingest(kind="url", agent_id="a1", url="https://example.com")
-        assert mock_http.call_args.kwargs["body"]["url"] == "https://example.com"
+        client.ingest_url.assert_called_once_with(
+            agent_id="a1", url="https://example.com", dataset_id=None
+        )
 
-    @patch("z3rno_mcp.server._http_request")
-    def test_ingest_dataset_id_threaded(self, mock_http):
-        mock_http.return_value = {}
+    @patch("z3rno_mcp.server._get_client")
+    def test_ingest_dataset_id_threaded(self, mock_get_client):
+        client = MagicMock()
+        client.ingest_text.return_value = _mock_job()
+        mock_get_client.return_value = client
+
         ingest(kind="text", agent_id="a1", text="x", dataset_id="ds-1")
-        assert mock_http.call_args.kwargs["body"]["dataset_id"] == "ds-1"
+        assert client.ingest_text.call_args.kwargs["dataset_id"] == "ds-1"
 
     def test_ingest_rejects_unknown_kind(self):
         parsed = json.loads(ingest(kind="bogus", agent_id="a1"))
@@ -315,55 +339,70 @@ class TestIngestHandler:
 
 
 class TestDistillHandler:
-    @patch("z3rno_mcp.server._http_request")
-    def test_distill_enqueue(self, mock_http):
-        mock_http.return_value = {"job_id": "dj-1"}
+    @patch("z3rno_mcp.server._get_client")
+    def test_distill_enqueue(self, mock_get_client):
+        client = MagicMock()
+        client.distill.return_value = _mock_job(job_id="dj-1")
+        mock_get_client.return_value = client
+
         result = distill(memory_ids=["m1", "m2"], agent_id="a1")
-        parsed = json.loads(result)
-        assert parsed["job_id"] == "dj-1"
-        method, path = mock_http.call_args.args[:2]
-        assert method == "POST"
-        assert path == "/v1/distill"
-        assert mock_http.call_args.kwargs["body"]["memory_ids"] == ["m1", "m2"]
+        assert json.loads(result)["job_id"] == "dj-1"
+        client.distill.assert_called_once_with(
+            agent_id="a1", memory_ids=["m1", "m2"]
+        )
 
-    @patch("z3rno_mcp.server._http_request")
-    def test_distill_poll(self, mock_http):
-        mock_http.return_value = {"status": "completed"}
+    @patch("z3rno_mcp.server._get_client")
+    def test_distill_poll(self, mock_get_client):
+        client = MagicMock()
+        client.get_distill_status.return_value = _mock_job(
+            job_id="dj-1", status="completed"
+        )
+        mock_get_client.return_value = client
+
         distill(poll_job_id="dj-1")
-        method, path = mock_http.call_args.args[:2]
-        assert method == "GET"
-        assert path == "/v1/distill/dj-1"
+        client.get_distill_status.assert_called_once_with("dj-1")
+        client.distill.assert_not_called()
 
-    @patch("z3rno_mcp.server._http_request")
-    def test_distill_without_inputs_errors(self, mock_http):
+    @patch("z3rno_mcp.server._get_client")
+    def test_distill_without_inputs_errors(self, mock_get_client):
+        client = MagicMock()
+        mock_get_client.return_value = client
+
         parsed = json.loads(distill(agent_id="a1"))
         assert "error" in parsed
-        mock_http.assert_not_called()
+        client.distill.assert_not_called()
 
 
 class TestRefineHandler:
-    @patch("z3rno_mcp.server._http_request")
-    def test_refine_enqueue_without_dataset(self, mock_http):
-        mock_http.return_value = {"job_id": "rj-1"}
+    @patch("z3rno_mcp.server._get_client")
+    def test_refine_enqueue_without_dataset(self, mock_get_client):
+        client = MagicMock()
+        client.refine.return_value = _mock_job(job_id="rj-1")
+        mock_get_client.return_value = client
+
         refine()
-        method, path = mock_http.call_args.args[:2]
-        assert method == "POST"
-        assert path == "/v1/refine"
-        assert mock_http.call_args.kwargs["body"] == {}
+        client.refine.assert_called_once_with(dataset_id=None)
 
-    @patch("z3rno_mcp.server._http_request")
-    def test_refine_enqueue_with_dataset(self, mock_http):
-        mock_http.return_value = {"job_id": "rj-2"}
+    @patch("z3rno_mcp.server._get_client")
+    def test_refine_enqueue_with_dataset(self, mock_get_client):
+        client = MagicMock()
+        client.refine.return_value = _mock_job(job_id="rj-2")
+        mock_get_client.return_value = client
+
         refine(dataset_id="ds-1")
-        assert mock_http.call_args.kwargs["body"]["dataset_id"] == "ds-1"
+        client.refine.assert_called_once_with(dataset_id="ds-1")
 
-    @patch("z3rno_mcp.server._http_request")
-    def test_refine_poll(self, mock_http):
-        mock_http.return_value = {"status": "running"}
+    @patch("z3rno_mcp.server._get_client")
+    def test_refine_poll(self, mock_get_client):
+        client = MagicMock()
+        client.get_refine_status.return_value = _mock_job(
+            job_id="rj-9", status="running"
+        )
+        mock_get_client.return_value = client
+
         refine(poll_job_id="rj-9")
-        method, path = mock_http.call_args.args[:2]
-        assert method == "GET"
-        assert path == "/v1/refine/rj-9"
+        client.get_refine_status.assert_called_once_with("rj-9")
+        client.refine.assert_not_called()
 
 
 class TestVisualizeUrlHandler:
