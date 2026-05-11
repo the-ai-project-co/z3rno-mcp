@@ -389,22 +389,26 @@ def start_conversation(
     ),
 )
 def end_conversation(conversation_id: str) -> str:
-    """Soft-delete a conversation. This is intentionally a thin alias —
-    the server does not currently expose a delete endpoint, so we mark
-    the conversation's metadata to indicate ended-by-client and let the
-    operator schedule the hard purge."""
+    """v0.19.3 — soft-delete a conversation via the server endpoint.
+
+    Existing turn Memos stay queryable through the standard recall
+    surface; the conversation just stops accepting new turns and its
+    metadata endpoints 404.
+    """
     client = _get_client()
     try:
-        # Soft-delete is server-side TODO; until then this returns the
-        # conversation metadata so callers see the current state.
-        conv = client.get_conversation(conversation_id)
+        # Snapshot final state for the response before deleting.
+        try:
+            conv = client.get_conversation(conversation_id)
+            final_count = conv.turn_count
+        except Exception:  # noqa: BLE001 — 404 / network → just delete blindly
+            final_count = -1
+        client.delete_conversation(conversation_id)
         return json.dumps(
             {
-                "conversation_id": conv.id,
-                "turn_count": conv.turn_count,
-                "status": "marked_ended",
-                "note": "soft-delete endpoint lands in v0.19; "
-                "conversation row stays queryable until then",
+                "conversation_id": conversation_id,
+                "turn_count": final_count,
+                "status": "deleted",
             },
             indent=2,
         )

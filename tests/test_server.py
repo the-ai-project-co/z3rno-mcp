@@ -475,7 +475,8 @@ class TestConversationTools:
         assert kwargs["title"] == "demo"
         assert kwargs["summary_cadence"] == 5
 
-    def test_end_conversation_returns_marked_ended(self, monkeypatch):
+    def test_end_conversation_calls_delete(self, monkeypatch):
+        """v0.19.3 — end_conversation now actually soft-deletes."""
         monkeypatch.setenv("Z3RNO_API_KEY", "sk-test")
         fake_client = MagicMock()
         conv = MagicMock()
@@ -485,8 +486,9 @@ class TestConversationTools:
 
         with patch("z3rno_mcp.server._get_client", return_value=fake_client):
             out = json.loads(end_conversation("c-1"))
-        assert out["status"] == "marked_ended"
+        assert out["status"] == "deleted"
         assert out["turn_count"] == 7
+        fake_client.delete_conversation.assert_called_once_with("c-1")
 
     def test_summarize_conversation_fetches_turns(self, monkeypatch):
         monkeypatch.setenv("Z3RNO_API_KEY", "sk-test")

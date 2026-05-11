@@ -1100,12 +1100,13 @@ requires-dist = [
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.80.0" },
     { name = "httpx", extras = ["http2"], specifier = ">=0.27.0" },
     { name = "langchain-core", marker = "extra == 'langchain'", specifier = ">=0.3.0" },
+    { name = "llama-index-core", marker = "extra == 'llama-index'", specifier = ">=0.11.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.50.0" },
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "structlog", specifier = ">=24.1.0" },
     { name = "tenacity", specifier = ">=9.0.0" },
 ]
-provides-extras = ["crewai", "langchain", "openai"]
+provides-extras = ["crewai", "langchain", "llama-index", "openai"]
 
 [package.metadata.requires-dev]
 dev = [
