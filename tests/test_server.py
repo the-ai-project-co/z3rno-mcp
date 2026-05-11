@@ -1,38 +1,63 @@
 """Tests for z3rno-mcp server tool registration and handler logic.
 
-Tests the tool definitions and handler functions with a mocked Z3rnoClient.
-Does NOT test actual MCP transport.
+Tests the tool definitions and handler functions with a mocked Z3rnoClient
+(for SDK-backed tools) and a mocked httpx layer (for Forge tools). Does
+NOT test actual MCP transport.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from z3rno_mcp.server import mcp, store, recall, forget, audit
-
+from z3rno_mcp.server import (
+    audit,
+    distill,
+    forget,
+    ingest,
+    mcp,
+    recall,
+    refine,
+    store,
+    visualize_url,
+)
 
 # ---------------------------------------------------------------------------
 # Tool registration
 # ---------------------------------------------------------------------------
 
-EXPECTED_TOOLS = {"z3rno.store", "z3rno.recall", "z3rno.forget", "z3rno.audit"}
+EXPECTED_TOOLS = {
+    "z3rno.store",
+    "z3rno.recall",
+    "z3rno.forget",
+    "z3rno.audit",
+    "z3rno.ingest",
+    "z3rno.distill",
+    "z3rno.refine",
+    "z3rno.visualize_url",
+}
+
+
+def _registered_tools():
+    """Sync wrapper around the async mcp.list_tools()."""
+    return asyncio.run(mcp.list_tools())
 
 
 class TestToolRegistration:
-    """Verify the FastMCP instance has all four tools registered."""
+    """Verify the FastMCP instance has all eight tools registered."""
 
     def test_all_tools_registered(self):
-        tools = mcp.list_tools()
+        tools = _registered_tools()
         registered_names = {t.name for t in tools}
-        assert EXPECTED_TOOLS == registered_names, (
+        assert registered_names == EXPECTED_TOOLS, (
             f"Expected tools {EXPECTED_TOOLS}, got {registered_names}"
         )
 
     def test_no_extra_tools(self):
-        tools = mcp.list_tools()
+        tools = _registered_tools()
         registered_names = {t.name for t in tools}
         assert len(registered_names) == len(EXPECTED_TOOLS)
 
@@ -47,7 +72,7 @@ class TestToolSchemas:
 
     @pytest.fixture()
     def tool_map(self):
-        return {t.name: t for t in mcp.list_tools()}
+        return {t.name: t for t in _registered_tools()}
 
     def test_store_schema_has_content(self, tool_map):
         schema = tool_map["z3rno.store"].inputSchema
@@ -241,3 +266,137 @@ class TestAgentIdResolution:
     def test_raises_without_agent_id(self, mock_get_client):
         with pytest.raises(ValueError, match="agent_id is required"):
             store(content="test")
+
+
+# ---------------------------------------------------------------------------
+# Forge tools (Phase E slice 3) — mock _http_request, no live server
+# ---------------------------------------------------------------------------
+
+
+class TestIngestHandler:
+    @patch("z3rno_mcp.server._http_request")
+    def test_ingest_text_calls_post(self, mock_http):
+        mock_http.return_value = {"job_id": "ij-1", "status": "queued"}
+        result = ingest(kind="text", agent_id="a1", text="hello world")
+        parsed = json.loads(result)
+        assert parsed["job_id"] == "ij-1"
+        method, path = mock_http.call_args.args[:2]
+        assert method == "POST"
+        assert path == "/v1/ingest"
+        assert mock_http.call_args.kwargs["body"] == {
+            "kind": "text",
+            "agent_id": "a1",
+            "text": "hello world",
+        }
+
+    @patch("z3rno_mcp.server._http_request")
+    def test_ingest_url_includes_url(self, mock_http):
+        mock_http.return_value = {"job_id": "ij-2"}
+        ingest(kind="url", agent_id="a1", url="https://example.com")
+        assert mock_http.call_args.kwargs["body"]["url"] == "https://example.com"
+
+    @patch("z3rno_mcp.server._http_request")
+    def test_ingest_dataset_id_threaded(self, mock_http):
+        mock_http.return_value = {}
+        ingest(kind="text", agent_id="a1", text="x", dataset_id="ds-1")
+        assert mock_http.call_args.kwargs["body"]["dataset_id"] == "ds-1"
+
+    def test_ingest_rejects_unknown_kind(self):
+        parsed = json.loads(ingest(kind="bogus", agent_id="a1"))
+        assert "error" in parsed
+
+    def test_ingest_text_without_text_errors(self):
+        parsed = json.loads(ingest(kind="text", agent_id="a1"))
+        assert "error" in parsed
+
+    def test_ingest_url_without_url_errors(self):
+        parsed = json.loads(ingest(kind="url", agent_id="a1"))
+        assert "error" in parsed
+
+
+class TestDistillHandler:
+    @patch("z3rno_mcp.server._http_request")
+    def test_distill_enqueue(self, mock_http):
+        mock_http.return_value = {"job_id": "dj-1"}
+        result = distill(memory_ids=["m1", "m2"], agent_id="a1")
+        parsed = json.loads(result)
+        assert parsed["job_id"] == "dj-1"
+        method, path = mock_http.call_args.args[:2]
+        assert method == "POST"
+        assert path == "/v1/distill"
+        assert mock_http.call_args.kwargs["body"]["memory_ids"] == ["m1", "m2"]
+
+    @patch("z3rno_mcp.server._http_request")
+    def test_distill_poll(self, mock_http):
+        mock_http.return_value = {"status": "completed"}
+        distill(poll_job_id="dj-1")
+        method, path = mock_http.call_args.args[:2]
+        assert method == "GET"
+        assert path == "/v1/distill/dj-1"
+
+    @patch("z3rno_mcp.server._http_request")
+    def test_distill_without_inputs_errors(self, mock_http):
+        parsed = json.loads(distill(agent_id="a1"))
+        assert "error" in parsed
+        mock_http.assert_not_called()
+
+
+class TestRefineHandler:
+    @patch("z3rno_mcp.server._http_request")
+    def test_refine_enqueue_without_dataset(self, mock_http):
+        mock_http.return_value = {"job_id": "rj-1"}
+        refine()
+        method, path = mock_http.call_args.args[:2]
+        assert method == "POST"
+        assert path == "/v1/refine"
+        assert mock_http.call_args.kwargs["body"] == {}
+
+    @patch("z3rno_mcp.server._http_request")
+    def test_refine_enqueue_with_dataset(self, mock_http):
+        mock_http.return_value = {"job_id": "rj-2"}
+        refine(dataset_id="ds-1")
+        assert mock_http.call_args.kwargs["body"]["dataset_id"] == "ds-1"
+
+    @patch("z3rno_mcp.server._http_request")
+    def test_refine_poll(self, mock_http):
+        mock_http.return_value = {"status": "running"}
+        refine(poll_job_id="rj-9")
+        method, path = mock_http.call_args.args[:2]
+        assert method == "GET"
+        assert path == "/v1/refine/rj-9"
+
+
+class TestVisualizeUrlHandler:
+    def test_default_url_uses_env(self, monkeypatch):
+        monkeypatch.setenv("Z3RNO_WEB_URL", "https://example.dev")
+        parsed = json.loads(visualize_url(dataset_id="ds-1"))
+        assert parsed["url"] == "https://example.dev/graph?dataset_id=ds-1"
+
+    def test_agent_id_param(self, monkeypatch):
+        monkeypatch.setenv("Z3RNO_WEB_URL", "https://x.dev")
+        parsed = json.loads(visualize_url(agent_id="a-1"))
+        assert parsed["url"] == "https://x.dev/graph?agent_id=a-1"
+
+    def test_both_params(self, monkeypatch):
+        monkeypatch.setenv("Z3RNO_WEB_URL", "https://x.dev")
+        parsed = json.loads(visualize_url(dataset_id="ds-1", agent_id="a-1"))
+        assert "dataset_id=ds-1" in parsed["url"]
+        assert "agent_id=a-1" in parsed["url"]
+
+    def test_neither_param_falls_back_to_env_agent(self, monkeypatch):
+        monkeypatch.setenv("Z3RNO_WEB_URL", "https://x.dev")
+        monkeypatch.setenv("Z3RNO_AGENT_ID", "env-agent")
+        parsed = json.loads(visualize_url())
+        assert parsed["url"] == "https://x.dev/graph?agent_id=env-agent"
+
+    def test_neither_and_no_env_returns_bare_url(self, monkeypatch):
+        monkeypatch.setenv("Z3RNO_WEB_URL", "https://x.dev")
+        monkeypatch.delenv("Z3RNO_AGENT_ID", raising=False)
+        parsed = json.loads(visualize_url())
+        assert parsed["url"] == "https://x.dev/graph"
+
+    def test_default_web_url_when_env_unset(self, monkeypatch):
+        monkeypatch.delenv("Z3RNO_WEB_URL", raising=False)
+        monkeypatch.delenv("Z3RNO_AGENT_ID", raising=False)
+        parsed = json.loads(visualize_url())
+        assert parsed["url"] == "https://app.z3rno.dev/graph"

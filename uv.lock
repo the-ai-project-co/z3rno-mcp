@@ -975,6 +975,18 @@ wheels = [
 ]
 
 [[package]]
+name = "structlog"
+version = "25.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ef/52/9ba0f43b686e7f3ddfeaa78ac3af750292662284b3661e91ad5494f21dbc/structlog-25.5.0.tar.gz", hash = "sha256:098522a3bebed9153d4570c6d0288abf80a031dfdb2048d59a49e9dc2190fc98", size = 1460830, upload-time = "2025-10-27T08:28:23.028Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/45/a132b9074aa18e799b891b91ad72133c98d8042c70f6240e4c5f9dabee2f/structlog-25.5.0-py3-none-any.whl", hash = "sha256:a8453e9b9e636ec59bd9e79bbd4a72f025981b3ba0f5837aebf48f02f37a7f9f", size = 72510, upload-time = "2025-10-27T08:28:21.535Z" },
+]
+
+[[package]]
 name = "tenacity"
 version = "9.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1074,23 +1086,25 @@ wheels = [
 
 [[package]]
 name = "z3rno"
-version = "0.1.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx", extra = ["http2"] },
     { name = "pydantic" },
+    { name = "structlog" },
     { name = "tenacity" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f9/79/a255145f50ec1ca9f1102dfd72fe17926c44f3b0f9906a726509d78f527c/z3rno-0.1.0.tar.gz", hash = "sha256:37e9818214f40d1c59bce380e4b6513b0aae55c555fd590378083c6ccd68d905", size = 107322, upload-time = "2026-04-20T08:41:27.814Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/c0/b6dc0d5173ceb1ed2ad770b63461118551fa9b0764044e60f7032f6ff3a1/z3rno-0.3.0.tar.gz", hash = "sha256:f526bf00c6abbbf89ed34b8b8714f28104a178d9808549a69a507bd481ed67c4", size = 371985, upload-time = "2026-05-11T06:39:31.555Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f5/9e/ef81561d00ed16d9e4c4d13c8fd5338d2979db3a8dca8d7d5a24df19b57d/z3rno-0.1.0-py3-none-any.whl", hash = "sha256:8ca3ac0ab67ad46ac5090f6260bf48c437eb5bd57cc2adc841730ac9458ab53e", size = 17250, upload-time = "2026-04-20T08:41:26.701Z" },
+    { url = "https://files.pythonhosted.org/packages/72/d0/ce2a5b1d6ae8999de392475100305dbd94105d181c1b4bcc6da34f789750/z3rno-0.3.0-py3-none-any.whl", hash = "sha256:83399b69205e6a0be3266b93df6725600a87b6b830bf67c7604b55de706ba056", size = 28626, upload-time = "2026-05-11T06:39:30.341Z" },
 ]
 
 [[package]]
 name = "z3rno-mcp"
-version = "0.1.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "mcp" },
     { name = "z3rno" },
 ]
@@ -1104,8 +1118,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "mcp", specifier = ">=1.0.0" },
-    { name = "z3rno", specifier = ">=0.1.0" },
+    { name = "z3rno", specifier = ">=0.3.0" },
 ]
 
 [package.metadata.requires-dev]

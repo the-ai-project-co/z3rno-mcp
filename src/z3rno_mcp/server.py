@@ -1,15 +1,28 @@
-"""Z3rno MCP server — thin wrapper around the z3rno Python SDK.
+"""Z3rno MCP server — thin wrapper around the z3rno Python SDK + HTTP for Forge verbs.
 
-Exposes four tools over MCP stdio transport:
-  - z3rno.store   — store a memory
-  - z3rno.recall  — semantic recall
-  - z3rno.forget  — soft or GDPR hard delete
-  - z3rno.audit   — query audit log
+Exposes the eight tools that mirror the seven canonical Z3rno verbs
+plus a viewer-URL helper:
+
+  - z3rno.store          — store a memory
+  - z3rno.recall         — semantic recall
+  - z3rno.forget         — soft or GDPR hard delete
+  - z3rno.audit          — query audit log
+  - z3rno.ingest         — accept text / URL into the Forge (Phase B.1+)
+  - z3rno.distill        — build / extend the graph from stored memories (Phase A)
+  - z3rno.refine         — improve the graph in place (Phase D)
+  - z3rno.visualize_url  — return a graph-viewer URL for a dataset (Phase E.5 backend)
+
+The four classic verbs use the official z3rno Python SDK. The three
+Forge verbs (ingest / distill / refine) call the server's HTTP
+endpoints directly via httpx — the SDK wrappers are queued for the
+next SDK release. visualize_url is a deterministic URL builder; it
+does not call the server.
 
 Configuration via environment variables:
   - Z3RNO_BASE_URL  (default: https://api.z3rno.dev)
   - Z3RNO_API_KEY   (required)
   - Z3RNO_AGENT_ID  (optional default agent ID)
+  - Z3RNO_WEB_URL   (default: https://app.z3rno.dev — used by visualize_url)
 """
 
 from __future__ import annotations
@@ -17,7 +30,9 @@ from __future__ import annotations
 import json
 import os
 from typing import Any
+from urllib.parse import urlencode
 
+import httpx
 from mcp.server.fastmcp import FastMCP
 from z3rno import Z3rnoClient
 
@@ -27,7 +42,12 @@ from z3rno import Z3rnoClient
 
 mcp = FastMCP(
     "z3rno",
-    description="Z3rno AI agent memory — store, recall, forget, and audit memories.",
+    instructions=(
+        "Z3rno AI agent memory — the seven canonical verbs. "
+        "store / recall / forget / audit cover day-to-day memory; "
+        "ingest / distill / refine drive the Forge (graph extraction + improvement); "
+        "visualize_url returns a viewer link for the current dataset."
+    ),
 )
 
 
@@ -48,6 +68,49 @@ def _default_agent_id(agent_id: str | None) -> str:
         return env_id
     msg = "agent_id is required (provide it as a parameter or set Z3RNO_AGENT_ID)"
     raise ValueError(msg)
+
+
+def _http_request(method: str, path: str, *, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Call a z3rno-server HTTP endpoint directly.
+
+    Used by the Forge tools (ingest / distill / refine) until those
+    verbs ship as first-class SDK methods. Reuses Z3RNO_BASE_URL +
+    Z3RNO_API_KEY from the environment so a single config drives both
+    the SDK-backed and HTTP-backed tools.
+
+    Returns the parsed JSON body. Surfaces HTTP errors as a structured
+    dict so the MCP client can render them — we never raise into the
+    tool layer.
+    """
+    base_url = os.environ.get("Z3RNO_BASE_URL", "https://api.z3rno.dev").rstrip("/")
+    api_key = os.environ.get("Z3RNO_API_KEY", "")
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    url = f"{base_url}{path}"
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.request(method, url, headers=headers, json=body)
+    except httpx.HTTPError as exc:
+        return {"error": "transport_failed", "detail": str(exc), "url": url}
+    if response.status_code >= 400:
+        return {
+            "error": "http_error",
+            "status_code": response.status_code,
+            "detail": _safe_json(response),
+            "url": url,
+        }
+    return _safe_json(response)
+
+
+def _safe_json(response: httpx.Response) -> dict[str, Any]:
+    try:
+        parsed = response.json()
+    except ValueError:
+        return {"raw_body": response.text}
+    if isinstance(parsed, dict):
+        return parsed
+    return {"value": parsed}
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +249,133 @@ def audit(
         return json.dumps(result.model_dump(), default=str, indent=2)
     finally:
         client.close()
+
+
+# ---------------------------------------------------------------------------
+# Forge tools — Phase E slice 3 additions
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    name="z3rno.ingest",
+    description=(
+        "Ingest text or a URL into the Z3rno Forge. Returns a job_id; the "
+        "server processes the input asynchronously and (when "
+        "INGEST_AUTO_DISTILL is on, which is the default) automatically "
+        "chains into z3rno.distill. Use kind='text' for raw text, "
+        "kind='url' for a web page. File uploads are not yet supported via MCP "
+        "— use the HTTP /v1/ingest/file endpoint directly for those."
+    ),
+)
+def ingest(
+    kind: str,
+    agent_id: str | None = None,
+    text: str | None = None,
+    url: str | None = None,
+    dataset_id: str | None = None,
+) -> str:
+    """Ingest text or a URL into the Forge."""
+    if kind not in {"text", "url"}:
+        return json.dumps({"error": "kind must be 'text' or 'url'"})
+    resolved_agent_id = _default_agent_id(agent_id)
+    body: dict[str, Any] = {"kind": kind, "agent_id": resolved_agent_id}
+    if kind == "text":
+        if not text:
+            return json.dumps({"error": "kind='text' requires the 'text' parameter"})
+        body["text"] = text
+    else:
+        if not url:
+            return json.dumps({"error": "kind='url' requires the 'url' parameter"})
+        body["url"] = url
+    if dataset_id:
+        body["dataset_id"] = dataset_id
+    result = _http_request("POST", "/v1/ingest", body=body)
+    return json.dumps(result, default=str, indent=2)
+
+
+@mcp.tool(
+    name="z3rno.distill",
+    description=(
+        "Build (or extend) the Z3rno knowledge graph from a set of stored "
+        "memories. Runs the Forge pipeline: chunk → LLM entity + relationship "
+        "extraction → write Memo graph nodes + edges. Returns a job_id; poll "
+        "with poll_job_id=<id> on a follow-up call to read the job's state. "
+        "Idempotent — re-running over already-distilled memories is a no-op."
+    ),
+)
+def distill(
+    memory_ids: list[str] | None = None,
+    agent_id: str | None = None,
+    poll_job_id: str | None = None,
+) -> str:
+    """Enqueue a Forge distillation job, or poll an existing one."""
+    if poll_job_id:
+        result = _http_request("GET", f"/v1/distill/{poll_job_id}")
+        return json.dumps(result, default=str, indent=2)
+    if not memory_ids:
+        return json.dumps(
+            {"error": "provide memory_ids to distill, or poll_job_id to check status"}
+        )
+    resolved_agent_id = _default_agent_id(agent_id)
+    body: dict[str, Any] = {"agent_id": resolved_agent_id, "memory_ids": memory_ids}
+    result = _http_request("POST", "/v1/distill", body=body)
+    return json.dumps(result, default=str, indent=2)
+
+
+@mcp.tool(
+    name="z3rno.refine",
+    description=(
+        "Improve the Z3rno graph in place. One refine pass does: dedupe "
+        "Memos sharing an ontology URI or normalized name (SCD-2 supersede); "
+        "EMA-blend edge weights from accumulated feedback; prune sub-threshold "
+        "edges. Optional LLM stages (infer / summarize) are server-side flags. "
+        "Returns a job_id; poll with poll_job_id=<id> to read the job's state. "
+        "Admin-scoped on the server."
+    ),
+)
+def refine(
+    dataset_id: str | None = None,
+    poll_job_id: str | None = None,
+) -> str:
+    """Enqueue a refine run, or poll an existing one."""
+    if poll_job_id:
+        result = _http_request("GET", f"/v1/refine/{poll_job_id}")
+        return json.dumps(result, default=str, indent=2)
+    body: dict[str, Any] = {}
+    if dataset_id:
+        body["dataset_id"] = dataset_id
+    result = _http_request("POST", "/v1/refine", body=body)
+    return json.dumps(result, default=str, indent=2)
+
+
+@mcp.tool(
+    name="z3rno.visualize_url",
+    description=(
+        "Return a URL to the Z3rno graph viewer for a dataset or agent. "
+        "Useful when the user asks 'show me the graph' or wants to inspect "
+        "the knowledge structure visually. The viewer (z3rno-web /graph) "
+        "ships as part of Phase E.5; until then the returned URL may 404."
+    ),
+)
+def visualize_url(
+    dataset_id: str | None = None,
+    agent_id: str | None = None,
+) -> str:
+    """Build a viewer URL for the current dataset / agent."""
+    base = os.environ.get("Z3RNO_WEB_URL", "https://app.z3rno.dev").rstrip("/")
+    params: dict[str, str] = {}
+    if dataset_id:
+        params["dataset_id"] = dataset_id
+    if agent_id:
+        params["agent_id"] = agent_id
+    elif not dataset_id:
+        # Neither supplied — fall back to env default if present.
+        env_agent = os.environ.get("Z3RNO_AGENT_ID", "")
+        if env_agent:
+            params["agent_id"] = env_agent
+    suffix = f"?{urlencode(params)}" if params else ""
+    url = f"{base}/graph{suffix}"
+    return json.dumps({"url": url}, indent=2)
 
 
 # ---------------------------------------------------------------------------
