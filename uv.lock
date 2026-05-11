@@ -1086,22 +1086,43 @@ wheels = [
 
 [[package]]
 name = "z3rno"
-version = "0.4.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.5.0"
+source = { editable = "../z3rno-sdk-python" }
 dependencies = [
     { name = "httpx", extra = ["http2"] },
     { name = "pydantic" },
     { name = "structlog" },
     { name = "tenacity" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9c/e0/fc730cf4e929162c03dc34134e7c80f29a3d7338e18a070c709d38fb5790/z3rno-0.4.0.tar.gz", hash = "sha256:de7f24b29d05aa93023096b26b8f6d4ccb4c4da97ace54400a554a6b1c76ef2a", size = 374889, upload-time = "2026-05-11T10:46:01.013Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9e/0f/34ffbaaadad59039487fd288f679a337ed66950bd40e5387346ae957f27e/z3rno-0.4.0-py3-none-any.whl", hash = "sha256:5f4bd2268a43754d6c8a1cea68c06a0cd2e1f88ad56d5d1c5c9aa05c9bc53340", size = 30500, upload-time = "2026-05-11T10:45:59.628Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.80.0" },
+    { name = "httpx", extras = ["http2"], specifier = ">=0.27.0" },
+    { name = "langchain-core", marker = "extra == 'langchain'", specifier = ">=0.3.0" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.50.0" },
+    { name = "pydantic", specifier = ">=2.10.0" },
+    { name = "structlog", specifier = ">=24.1.0" },
+    { name = "tenacity", specifier = ">=9.0.0" },
+]
+provides-extras = ["crewai", "langchain", "openai"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mkdocs", specifier = ">=1.6.0" },
+    { name = "mkdocs-material", specifier = ">=9.5.0" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.26.0" },
+    { name = "mypy", specifier = ">=1.13.0" },
+    { name = "pytest", specifier = ">=8.3.0" },
+    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+    { name = "pytest-httpx", specifier = ">=0.34.0" },
+    { name = "ruff", specifier = ">=0.8.6" },
 ]
 
 [[package]]
 name = "z3rno-mcp"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp" },
@@ -1118,7 +1139,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "mcp", specifier = ">=1.0.0" },
-    { name = "z3rno", specifier = ">=0.4.0" },
+    { name = "z3rno", editable = "../z3rno-sdk-python" },
 ]
 
 [package.metadata.requires-dev]

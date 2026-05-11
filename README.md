@@ -14,16 +14,31 @@ MCP (Model Context Protocol) server that exposes [Z3rno](https://z3rno.dev) memo
 | `z3rno.recall` | Semantic search over stored memories |
 | `z3rno.forget` | Soft delete or GDPR-compliant hard delete |
 | `z3rno.audit` | Query the audit log of memory operations |
+| `z3rno.ingest` | Accept text/URL into the Forge pipeline |
+| `z3rno.distill` | Build/extend the graph from stored memories |
+| `z3rno.refine` | Improve the graph in place |
+| `z3rno.visualize_url` | Build a graph-viewer URL |
+| `z3rno.start_conversation` | Open a session for turn-aware recall (Phase G) |
+| `z3rno.end_conversation` | Mark a session ended (Phase G) |
+| `z3rno.summarize_conversation` | Fetch turn history for LLM summarization (Phase G) |
+| `z3rno.time_travel` | Recall at a past timestamp via SCD-2 temporal index (Phase G) |
 
 ## Installation
 
 ```bash
-# With uv (recommended)
+# Zero-install run — same UX as npx for Python tools
+uvx z3rno-mcp
+
+# Pin into a project
 uv pip install z3rno-mcp
 
-# With pip
+# Or with pip
 pip install z3rno-mcp
 ```
+
+### Claude Code plugin
+
+A plugin manifest at `claude-code-plugin/plugin.json` pins `uvx z3rno-mcp` and declares all twelve tools. Point Claude Code at it and set `Z3RNO_API_KEY` before launch.
 
 ## Configuration
 

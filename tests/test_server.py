@@ -16,12 +16,16 @@ import pytest
 from z3rno_mcp.server import (
     audit,
     distill,
+    end_conversation,
     forget,
     ingest,
     mcp,
     recall,
     refine,
+    start_conversation,
     store,
+    summarize_conversation,
+    time_travel,
     visualize_url,
 )
 
@@ -38,6 +42,11 @@ EXPECTED_TOOLS = {
     "z3rno.distill",
     "z3rno.refine",
     "z3rno.visualize_url",
+    # Phase G slice 2 — conversation-aware tools.
+    "z3rno.start_conversation",
+    "z3rno.end_conversation",
+    "z3rno.summarize_conversation",
+    "z3rno.time_travel",
 }
 
 
@@ -439,3 +448,95 @@ class TestVisualizeUrlHandler:
         monkeypatch.delenv("Z3RNO_AGENT_ID", raising=False)
         parsed = json.loads(visualize_url())
         assert parsed["url"] == "https://app.z3rno.dev/graph"
+
+
+# ---------------------------------------------------------------------------
+# Phase G slice 2 — conversation tools
+# ---------------------------------------------------------------------------
+
+
+class TestConversationTools:
+    """Spot-check the four conversation-aware tools dispatch to the SDK."""
+
+    def test_start_conversation_calls_create(self, monkeypatch):
+        monkeypatch.setenv("Z3RNO_API_KEY", "sk-test")
+        monkeypatch.setenv("Z3RNO_AGENT_ID", "agent-1")
+        fake_client = MagicMock()
+        conv = MagicMock()
+        conv.model_dump.return_value = {"id": "c-1", "turn_count": 0}
+        fake_client.create_conversation.return_value = conv
+
+        with patch("z3rno_mcp.server._get_client", return_value=fake_client):
+            out = json.loads(start_conversation(title="demo", summary_cadence=5))
+        assert out["id"] == "c-1"
+        fake_client.create_conversation.assert_called_once()
+        kwargs = fake_client.create_conversation.call_args.kwargs
+        assert kwargs["agent_id"] == "agent-1"
+        assert kwargs["title"] == "demo"
+        assert kwargs["summary_cadence"] == 5
+
+    def test_end_conversation_returns_marked_ended(self, monkeypatch):
+        monkeypatch.setenv("Z3RNO_API_KEY", "sk-test")
+        fake_client = MagicMock()
+        conv = MagicMock()
+        conv.id = "c-1"
+        conv.turn_count = 7
+        fake_client.get_conversation.return_value = conv
+
+        with patch("z3rno_mcp.server._get_client", return_value=fake_client):
+            out = json.loads(end_conversation("c-1"))
+        assert out["status"] == "marked_ended"
+        assert out["turn_count"] == 7
+
+    def test_summarize_conversation_fetches_turns(self, monkeypatch):
+        monkeypatch.setenv("Z3RNO_API_KEY", "sk-test")
+        fake_client = MagicMock()
+        page = MagicMock()
+        page.model_dump.return_value = {"turns": [], "total": 0}
+        fake_client.list_turns.return_value = page
+
+        with patch("z3rno_mcp.server._get_client", return_value=fake_client):
+            out = json.loads(
+                summarize_conversation("c-1", after_turn=3, limit=20)
+            )
+        assert out["total"] == 0
+        fake_client.list_turns.assert_called_once_with(
+            "c-1", after_turn=3, limit=20
+        )
+
+    def test_time_travel_parses_iso_and_forwards_as_of(self, monkeypatch):
+        monkeypatch.setenv("Z3RNO_API_KEY", "sk-test")
+        monkeypatch.setenv("Z3RNO_AGENT_ID", "agent-1")
+        fake_client = MagicMock()
+        resp = MagicMock()
+        resp.model_dump.return_value = {"results": [], "total": 0}
+        fake_client.recall.return_value = resp
+
+        with patch("z3rno_mcp.server._get_client", return_value=fake_client):
+            time_travel(as_of="2026-01-15T12:00:00Z", query="q")
+        kwargs = fake_client.recall.call_args.kwargs
+        assert kwargs["query"] == "q"
+        assert kwargs["as_of"].year == 2026
+        assert kwargs["as_of"].month == 1
+
+
+# ---------------------------------------------------------------------------
+# Claude Code plugin manifest
+# ---------------------------------------------------------------------------
+
+
+def test_claude_code_plugin_manifest_is_consistent():
+    """The plugin.json must list every tool the server registers."""
+    from pathlib import Path
+
+    manifest_path = (
+        Path(__file__).parent.parent / "claude-code-plugin" / "plugin.json"
+    )
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["name"] == "z3rno"
+    assert manifest["mcpServers"]["z3rno"]["command"] == "uvx"
+    declared = set(manifest["tools"])
+    assert declared == EXPECTED_TOOLS, (
+        f"plugin.json tools drifted from server registration: "
+        f"missing={EXPECTED_TOOLS - declared}, extra={declared - EXPECTED_TOOLS}"
+    )

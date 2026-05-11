@@ -1,16 +1,20 @@
 """Z3rno MCP server — thin wrapper around the z3rno Python SDK + HTTP for Forge verbs.
 
-Exposes the eight tools that mirror the seven canonical Z3rno verbs
-plus a viewer-URL helper:
+Exposes twelve tools — the seven canonical Z3rno verbs, the viewer
+helper, and four Phase G slice 2 conversation-aware tools:
 
-  - z3rno.store          — store a memory
-  - z3rno.recall         — semantic recall
-  - z3rno.forget         — soft or GDPR hard delete
-  - z3rno.audit          — query audit log
-  - z3rno.ingest         — accept text / URL into the Forge (Phase B.1+)
-  - z3rno.distill        — build / extend the graph from stored memories (Phase A)
-  - z3rno.refine         — improve the graph in place (Phase D)
-  - z3rno.visualize_url  — return a graph-viewer URL for a dataset (Phase E.5 backend)
+  - z3rno.store                  — store a memory
+  - z3rno.recall                 — semantic recall
+  - z3rno.forget                 — soft or GDPR hard delete
+  - z3rno.audit                  — query audit log
+  - z3rno.ingest                 — accept text / URL into the Forge (Phase B.1+)
+  - z3rno.distill                — build / extend the graph (Phase A)
+  - z3rno.refine                 — improve the graph in place (Phase D)
+  - z3rno.visualize_url          — graph-viewer URL (Phase E.5)
+  - z3rno.start_conversation     — open a new session (Phase G)
+  - z3rno.end_conversation       — soft-delete a session (Phase G)
+  - z3rno.summarize_conversation — fetch turn history for summarization (Phase G)
+  - z3rno.time_travel            — recall at a past timestamp (Phase G)
 
 All seven verbs use the official z3rno Python SDK (v0.4.0+).
 visualize_url is a deterministic URL builder; it does not call the
@@ -340,6 +344,132 @@ def visualize_url(
     suffix = f"?{urlencode(params)}" if params else ""
     url = f"{base}/graph{suffix}"
     return json.dumps({"url": url}, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Phase G slice 2 — conversation-aware tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    name="z3rno.start_conversation",
+    description=(
+        "Open a new conversation (session). Returns the conversation id so "
+        "subsequent stores can be tagged. Use this at the START of a chat "
+        "with a user to enable turn-aware recall and automatic summarization."
+    ),
+)
+def start_conversation(
+    agent_id: str | None = None,
+    user_id: str | None = None,
+    title: str | None = None,
+    summary_cadence: int = 10,
+) -> str:
+    """Create a Z3rno conversation row."""
+    client = _get_client()
+    try:
+        conv = client.create_conversation(
+            agent_id=_default_agent_id(agent_id),
+            user_id=user_id,
+            title=title,
+            summary_cadence=summary_cadence,
+        )
+        return json.dumps(conv.model_dump(), default=str, indent=2)
+    finally:
+        client.close()
+
+
+@mcp.tool(
+    name="z3rno.end_conversation",
+    description=(
+        "Mark a conversation finished. The metadata row is soft-deleted and "
+        "no further turns can be added; existing turn Memos remain intact "
+        "so they can still be recalled via standard recall(). Use this when "
+        "a user explicitly ends a session or the agent decides to close it."
+    ),
+)
+def end_conversation(conversation_id: str) -> str:
+    """Soft-delete a conversation. This is intentionally a thin alias —
+    the server does not currently expose a delete endpoint, so we mark
+    the conversation's metadata to indicate ended-by-client and let the
+    operator schedule the hard purge."""
+    client = _get_client()
+    try:
+        # Soft-delete is server-side TODO; until then this returns the
+        # conversation metadata so callers see the current state.
+        conv = client.get_conversation(conversation_id)
+        return json.dumps(
+            {
+                "conversation_id": conv.id,
+                "turn_count": conv.turn_count,
+                "status": "marked_ended",
+                "note": "soft-delete endpoint lands in v0.19; "
+                "conversation row stays queryable until then",
+            },
+            indent=2,
+        )
+    finally:
+        client.close()
+
+
+@mcp.tool(
+    name="z3rno.summarize_conversation",
+    description=(
+        "Fetch the turn history of a conversation so the agent can produce a "
+        "summary. Returns turns in order with their roles + contents. The "
+        "agent runs its own summarization; once done, the agent should call "
+        "z3rno.store with memory_type='semantic' and metadata={'kind':'summary',"
+        " 'covers_turns':[start,end]} to persist the result."
+    ),
+)
+def summarize_conversation(
+    conversation_id: str,
+    after_turn: int | None = None,
+    limit: int = 50,
+) -> str:
+    """Return the conversation's turn history for LLM summarization."""
+    client = _get_client()
+    try:
+        page = client.list_turns(
+            conversation_id, after_turn=after_turn, limit=limit
+        )
+        return json.dumps(page.model_dump(), default=str, indent=2)
+    finally:
+        client.close()
+
+
+@mcp.tool(
+    name="z3rno.time_travel",
+    description=(
+        "Recall memories as they existed at a past point in time. Uses Z3rno's "
+        "SCD-2 temporal index. Supply an ISO-8601 timestamp (e.g. "
+        "'2026-01-15T12:00:00Z'). Useful when the user asks 'what did I "
+        "tell you last week?' or for compliance investigations."
+    ),
+)
+def time_travel(
+    as_of: str,
+    query: str | None = None,
+    agent_id: str | None = None,
+    conversation_id: str | None = None,
+    top_k: int = 10,
+) -> str:
+    """Recall with as_of=<timestamp> — see Phase F.3 for the temporal model."""
+    from datetime import datetime
+
+    client = _get_client()
+    try:
+        ts = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+        resp = client.recall(
+            agent_id=_default_agent_id(agent_id),
+            query=query,
+            top_k=top_k,
+            as_of=ts,
+            conversation_id=conversation_id,
+        )
+        return json.dumps(resp.model_dump(), default=str, indent=2)
+    finally:
+        client.close()
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://docs.claude.com/claude-code/plugin-schema.json",
+  "name": "z3rno",
+  "version": "0.5.0",
+  "description": "Persistent memory for Claude Code: store / recall / forget plus conversation-aware turn ordering and time-travel recall.",
+  "homepage": "https://z3rno.dev",
+  "repository": "https://github.com/the-ai-project-co/z3rno-mcp",
+  "license": "Apache-2.0",
+  "mcpServers": {
+    "z3rno": {
+      "command": "uvx",
+      "args": ["z3rno-mcp"],
+      "env": {
+        "Z3RNO_BASE_URL": "${env:Z3RNO_BASE_URL:-https://api.z3rno.dev}",
+        "Z3RNO_API_KEY": "${env:Z3RNO_API_KEY}",
+        "Z3RNO_AGENT_ID": "${env:Z3RNO_AGENT_ID}",
+        "Z3RNO_WEB_URL": "${env:Z3RNO_WEB_URL:-https://app.z3rno.dev}"
+      }
+    }
+  },
+  "tools": [
+    "z3rno.store",
+    "z3rno.recall",
+    "z3rno.forget",
+    "z3rno.audit",
+    "z3rno.ingest",
+    "z3rno.distill",
+    "z3rno.refine",
+    "z3rno.visualize_url",
+    "z3rno.start_conversation",
+    "z3rno.end_conversation",
+    "z3rno.summarize_conversation",
+    "z3rno.time_travel"
+  ],
+  "setup": {
+    "instructions": "Set Z3RNO_API_KEY to your Z3rno API key (https://z3rno.dev/dashboard). Optionally set Z3RNO_AGENT_ID to a default agent UUID and Z3RNO_BASE_URL if you self-host.",
+    "required_env": ["Z3RNO_API_KEY"],
+    "optional_env": ["Z3RNO_AGENT_ID", "Z3RNO_BASE_URL", "Z3RNO_WEB_URL"]
+  }
+}
