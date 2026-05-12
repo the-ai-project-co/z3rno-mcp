@@ -127,7 +127,11 @@ def recall(
     memory_type: str | None = None,
     top_k: int = 10,
     similarity_threshold: float = 0.0,
+    # v0.21.2 — renamed from ``filters`` (deprecated alias).
+    metadata_filter: dict[str, Any] | None = None,
     filters: dict[str, Any] | None = None,
+    # v0.21.1 — real WHERE predicate.
+    user_id: str | None = None,
 ) -> str:
     """Recall memories from Z3rno."""
     resolved_agent_id = _default_agent_id(agent_id)
@@ -139,7 +143,9 @@ def recall(
             memory_type=memory_type,
             top_k=top_k,
             similarity_threshold=similarity_threshold,
+            metadata_filter=metadata_filter,
             filters=filters,
+            user_id=user_id,
         )
         return json.dumps(response.model_dump(), default=str, indent=2)
     finally:
@@ -456,6 +462,8 @@ def time_travel(
     query: str | None = None,
     agent_id: str | None = None,
     conversation_id: str | None = None,
+    # v0.21.1 — scope by end-user id for per-user time travel.
+    user_id: str | None = None,
     top_k: int = 10,
 ) -> str:
     """Recall with as_of=<timestamp> — see Phase F.3 for the temporal model."""
@@ -470,6 +478,7 @@ def time_travel(
             top_k=top_k,
             as_of=ts,
             conversation_id=conversation_id,
+            user_id=user_id,
         )
         return json.dumps(resp.model_dump(), default=str, indent=2)
     finally:
