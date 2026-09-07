@@ -3,6 +3,8 @@
 [![PyPI](https://img.shields.io/pypi/v/z3rno-mcp)](https://pypi.org/project/z3rno-mcp/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![CI](https://github.com/the-ai-project-co/z3rno-mcp/actions/workflows/release.yml/badge.svg)](https://github.com/the-ai-project-co/z3rno-mcp/actions/workflows/release.yml)
+[![GitHub downloads](https://img.shields.io/github/downloads/the-ai-project-co/z3rno-mcp/total)](https://github.com/the-ai-project-co/z3rno-mcp/releases)
+[![PyPI downloads](https://static.pepy.tech/badge/z3rno-mcp)](https://pepy.tech/project/z3rno-mcp)
 
 MCP (Model Context Protocol) server that exposes [Z3rno](https://z3rno.dev) memory operations as tools. Gives any MCP-compatible AI client (Claude Desktop, Cursor, Windsurf, etc.) the ability to store, recall, forget, and audit agent memories.
 
